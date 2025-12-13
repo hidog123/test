@@ -9,14 +9,14 @@ services:
       - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN}
       - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
       - KC_DB=dev-file
-      - KC_HOSTNAME=keycloak.localhost
-      - KC_HOSTNAME_URL=http://keycloak.localhost # <-- CORRECTION 2 : Utilisation de KC_HOSTNAME_URL
+      #- KC_HOSTNAME=keycloak.localhost # <-- SUPPRIMER CETTE LIGNE
+      - KC_HOSTNAME_URL=http://keycloak.localhost
       - KC_HTTP_RELATIVE_PATH=/auth
       - KC_HEALTH_ENABLED=true
       - KC_METRICS_ENABLED=true
     volumes:
       - ./keycloak/realm-config.json:/opt/keycloak/data/import/realm-config.json
-    command: start --import-realm --optimized # <-- CORRECTION 2 : Commande simplifiée
+    command: start --import-realm --optimized
     labels:
       - "traefik.enable=true"
     networks:
