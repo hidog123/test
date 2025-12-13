@@ -1,1 +1,89 @@
+# zt-project/docker-compose.yml
+version: '3.7'
 
+services:
+  # 1. Keycloak (Serveur d'identité/Ticket)
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0.7
+    container_name: keycloak
+    environment:
+      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN}
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
+      - KC_DB=dev-file
+      - KC_HOSTNAME=keycloak.localhost:80
+      - KC_HTTP_RELATIVE_PATH=/auth
+      - KC_HEALTH_ENABLED=true
+      - KC_METRICS_ENABLED=true
+    volumes:
+      - ./keycloak/realm-config.json:/opt/keycloak/data/import/realm-config.json
+    command: start --import-realm --hostname-url=http://keycloak.localhost
+    labels:
+      - "traefik.enable=true"
+    networks:
+      - zt-net
+
+  # 2. Traefik (Le Garde)
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    command:
+      - "--providers.docker=true"
+      - "--providers.file.filename=/etc/traefik/dynamic_conf.yml"
+      - "--api.insecure=true"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+      - "8080:8080" # Tableau de bord Traefik
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic_conf.yml:/etc/traefik/dynamic_conf.yml:ro
+    networks:
+      - zt-net
+
+  # 3. OPA (Le Juge/Moteur de politique)
+  opa:
+    image: openpolicyagent/opa:latest-dev
+    container_name: opa
+    command: run --server --addr :8181 --log-level debug /policy.rego
+    volumes:
+      - ./opa/policy.rego:/policy.rego:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.opa.loadbalancer.server.port=8181"
+    networks:
+      - zt-net
+
+  # 4. Forward Auth (Le service qui gère l'échange Keycloak OIDC/OAuth2)
+  forward-auth:
+    image: thomseddon/traefik-forward-auth:latest
+    container_name: forward-auth
+    environment:
+      # Configuration OIDC avec Keycloak
+      - PROVIDERS_GENERIC_OAUTH_CLIENT_ID=${KC_CLIENT_ID}
+      - PROVIDERS_GENERIC_OAUTH_CLIENT_SECRET=${KC_CLIENT_SECRET}
+      - PROVIDERS_GENERIC_OAUTH_AUTH_URL=http://keycloak.localhost/auth/realms/${KC_REALM}/protocol/openid-connect/auth
+      - PROVIDERS_GENERIC_OAUTH_TOKEN_URL=http://keycloak.localhost/auth/realms/${KC_REALM}/protocol/openid-connect/token
+      - PROVIDERS_GENERIC_OAUTH_USER_URL=http://keycloak.localhost/auth/realms/${KC_REALM}/protocol/openid-connect/userinfo
+      # Récupère les rôles Keycloak et les mappe
+      - PROVIDERS_GENERIC_OAUTH_SCOPE=openid profile email roles
+      - PROVIDERS_GENERIC_OAUTH_ROLES=demo-client
+      - URL_BASE=http://demo.localhost
+      - INSECURE_COOKIE=true # Pour le développement HTTP
+      - LOG_LEVEL=debug
+    networks:
+      - zt-net
+
+  # 5. Demo-App (Application cible)
+  demo-app:
+    build:
+      context: ./demo-app
+    container_name: demo-app
+    labels:
+      - "traefik.enable=true"
+    networks:
+      - zt-net
+
+networks:
+  zt-net:
+    driver: bridge
