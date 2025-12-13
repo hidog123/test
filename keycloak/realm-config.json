@@ -1,1 +1,49 @@
-
+{
+  "realm": "zt-realm",
+  "enabled": true,
+  "clients": [
+    {
+      "clientId": "demo-client",
+      "secret": "mysecretkey",
+      "redirectUris": ["http://demo.localhost/oauth2/callback"],
+      "webOrigins": ["+"],
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "alicepass"
+        }
+      ],
+      "clientRoles": {
+        "demo-client": ["zt-user"]
+      },
+      "attributes": {
+        "department": ["IT"]
+      }
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "bobpass"
+        }
+      ],
+      "clientRoles": {
+        "demo-client": ["guest"]
+      },
+      "attributes": {
+        "department": ["HR"]
+      }
+    }
+  ]
+}
