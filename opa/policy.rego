@@ -1,36 +1,39 @@
-# opa/policy.rego
+# opa/policy.rego (Politique Zero Trust basée sur Traefik/Keycloak)
 
 package authz
 
+import future.keywords.if
+
 default allow = false
 
-# Règle principale : Autoriser si un des critères est vrai
-allow {
-    has_zt_user_role
+# L'utilisateur "alice" doit avoir le rôle 'zt-user' pour réussir le jugement ZT.
+# L'utilisateur "bob" n'a que le rôle 'guest' et sera refusé.
+
+# Définir les rôles requis pour l'accès à la demo-app
+required_roles := {"zt-user"}
+
+# Définir les rôles de l'utilisateur (extraits de l'en-tête envoyé par ForwardAuth)
+user_roles := input.headers["X-Forwarded-User-Roles"]
+
+# Règle d'autorisation (Judgement: OUI)
+allow if {
+    # 1. CONTEXTE : La méthode HTTP est "GET"
+    input.method == "GET"
+    
+    # 2. IDENTITÉ/TICKET : L'un des rôles de l'utilisateur est dans les rôles requis
+    user_roles_intersection := required_roles & user_roles
+    count(user_roles_intersection) > 0
 }
 
-# Règle optionnelle basée sur le contexte (ex: IP locale)
-allow {
-    is_local_ip
+# Règle d'autorisation alternative (pour le debug/test d'IP interne)
+allow if {
+    # 3. CONTEXTE : L'IP de la requête est une IP de "confiance" (simulant un accès VPN/réseau local)
+    input.headers["X-Forwarded-For"] == "172.18.0.1"
 }
 
-# Vérifie si l'utilisateur a le rôle 'zt-user'
-has_zt_user_role {
-    # 'input' est le corps de la requête envoyée par Traefik (ForwardAuth)
-    some i
-    # Les rôles sont généralement dans le jeton JWT (Ticket)
-    # L'exemple Traefik ForwardAuth envoie les rôles dans un header
-    input.headers["X-Forwarded-User-Roles"][i] == "zt-user"
-}
 
-# Vérifie si la requête provient d'une IP "interne"
-is_local_ip {
-    input.headers["X-Forwarded-For"] == "172.18.0.1" # Exemple d'IP interne du réseau Docker
-}
-
-# Si le déni est décidé, nous retournons un statut d'erreur
-# Le statut par défaut est 403, mais on peut le personnaliser
-deny[msg] {
+# Règle de déni (si aucune règle "allow" n'est satisfaite)
+deny[msg] if {
     not allow
-    msg := "Access Denied by Zero Trust Policy (OPA)"
+    msg := "Access Denied by Zero Trust Policy. Required role: zt-user"
 }
