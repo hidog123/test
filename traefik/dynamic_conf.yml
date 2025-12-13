@@ -1,1 +1,52 @@
+# traefik/dynamic_conf.yml
 
+http:
+  routers:
+    # 1. Router pour Keycloak (Accessible publiquement)
+    keycloak-router:
+      rule: "Host(`keycloak.localhost`)"
+      service: "keycloak@docker"
+      entryPoints:
+        - "web"
+
+    # 2. Router pour Demo-App (Protégé par ZT)
+    demo-router:
+      rule: "Host(`demo.localhost`)"
+      service: "demo-app@docker"
+      entryPoints:
+        - "web"
+      # Application des middlewares dans l'ordre :
+      # a) Authentification/Ticket (OAuth/OIDC)
+      # b) Contrôle/Jugement (ForwardAuth vers OPA)
+      middlewares:
+        - "oauth@docker"
+        - "authz@docker"
+
+  services:
+    # Services Docker (définis dans docker-compose)
+    demo-app:
+      loadBalancer:
+        servers:
+          - url: "http://demo-app:80"
+
+  middlewares:
+    # Middleware 1 : Authentification OIDC (Keycloak)
+    # Nous utilisons Traefik ForwardAuth avec un conteneur externe (ex: thomseddon/traefik-forward-auth)
+    # Ce service gère l'échange de code/jeton OIDC avec Keycloak
+    oauth:
+      forwardAuth:
+        address: "http://forward-auth:4181"
+        authResponseHeaders:
+          - "X-Forwarded-User"
+          - "X-Forwarded-User-Roles" # Pour passer les rôles à OPA
+
+    # Middleware 2 : Autorisation (OPA) - Le jugement ZT
+    authz:
+      forwardAuth:
+        address: "http://opa:8181/v1/data/authz/allow"
+        authRequestHeaders:
+          - "X-Forwarded-Method"
+          - "X-Forwarded-Uri"
+          - "X-Forwarded-User"
+          - "X-Forwarded-User-Roles" # Récupère les rôles du middleware 'oauth'
+          - "X-Forwarded-For" # Pour la règle de contexte IP
