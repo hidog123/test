@@ -1,1 +1,19 @@
+# traefik/traefik.yml
 
+global:
+  checkNewVersion: false
+
+entryPoints:
+  web:
+    address: ":80"
+
+providers:
+  docker:
+    exposedByDefault: false
+  file:
+    filename: /etc/traefik/dynamic_conf.yml
+    watch: true
+
+api:
+  dashboard: true
+  insecure: true
