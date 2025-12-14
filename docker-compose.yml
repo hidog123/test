@@ -1,7 +1,7 @@
 version: '3.7'
 
 services:
-  # 1. Keycloak (Serveur d'identité/Ticket)
+  # 1. Keycloak
   keycloak:
     image: quay.io/keycloak/keycloak:23.0.7
     container_name: keycloak
@@ -9,25 +9,24 @@ services:
       - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN}
       - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
       - KC_DB=dev-file
-      - KC_HOSTNAME_URL=http://keycloak.localhost # Correction 1 : Conserver uniquement URL pour éviter le conflit
+      - KC_HOSTNAME_URL=http://keycloak.localhost
       - KC_HTTP_RELATIVE_PATH=/auth
       - KC_HEALTH_ENABLED=true
       - KC_METRICS_ENABLED=true
     volumes:
       - ./keycloak/realm-config.json:/opt/keycloak/data/import/realm-config.json
-    # Correction 2 : Passage en mode développement pour éviter l'obligation de HTTPS
     command: start-dev --import-realm --optimized 
     labels:
-      - "traefik.enable=true"
+      - "traefik.enable=true" 
     networks:
       - zt-net
-
-  # 2. Traefik (Le Garde)
+      
+  # 2. Traefik
   traefik:
     image: traefik:v2.10
     container_name: traefik
     command:
-      - "--providers.docker=true"
+      - "--providers.docker=true" 
       - "--providers.file.filename=/etc/traefik/dynamic_conf.yml"
       - "--api.insecure=true"
       - "--entrypoints.web.address=:80"
@@ -37,11 +36,11 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
-      - ./traefik/dynamic_conf.yml:/etc/traefik/dynamic_conf.yml:ro
+      - ./traefik/dynamic_conf.yml:/etc/traefik/dynamic_conf.yml:ro 
     networks:
       - zt-net
 
-  # 3. OPA (Le Juge/Moteur de politique)
+  # 3. OPA
   opa:
     image: openpolicyagent/opa:latest
     container_name: opa
@@ -49,31 +48,38 @@ services:
     volumes:
       - ./opa/policy.rego:/policy.rego:ro
     labels:
-      - "traefik.enable=true"
+      - "traefik.enable=true" 
       - "traefik.http.services.opa.loadbalancer.server.port=8181"
     networks:
       - zt-net
 
-  # 4. Forward Auth (Le service qui gère l'échange Keycloak OIDC/OAuth2)
+  # 4. Forward Auth (Le service qui gère l'échange OIDC/OAuth2 et l'appel à OPA)
   forward-auth:
-    image: thomseddon/traefik-forward-auth:latest
+    image: thomseddon/traefik-forward-auth:latest # REVENU À LATEST
     container_name: forward-auth
     environment:
       - SECRET=Une-Tres-Longue-Chaine-Secrete-Pour-Chiffrer-Les-Cookies-De-Session-OIDC-A-Changer-En-Prod 
       
-      # Correction 3 : Activer explicitement le fournisseur générique
-      - PROVIDERS_GENERIC_OAUTH_ENABLED=true 
-      # Correction 4a : Désactiver explicitement le fournisseur Google
+      - DEFAULT_PROVIDER=generic_oauth 
+      
       - PROVIDERS_GOOGLE_ENABLED=false 
-      # Correction 4b : Fournir des valeurs dummy pour satisfaire l'initialisation Google (problème récurrent)
       - PROVIDERS_GOOGLE_CLIENT_ID=dummy
       - PROVIDERS_GOOGLE_CLIENT_SECRET=dummy
       
+      # Configuration Keycloak (Fournisseur générique)
+      - PROVIDERS_GENERIC_OAUTH_ENABLED=true 
+      
+      # [CORRECTION CRITIQUE DNS INTERNE] Utiliser le nom de service interne Keycloak:8080
+      - PROVIDERS_GENERIC_OAUTH_PROVIDER_NAME=Keycloak
+      - PROVIDERS_GENERIC_OAUTH_BASE_URL=http://keycloak:8080/auth/realms/${KC_REALM}/protocol/openid-connect
+      
       - PROVIDERS_GENERIC_OAUTH_CLIENT_ID=${KC_CLIENT_ID}
       - PROVIDERS_GENERIC_OAUTH_CLIENT_SECRET=${KC_CLIENT_SECRET}
-      - PROVIDERS_GENERIC_OAUTH_AUTH_URL=http://keycloak.localhost/auth/realms/${KC_REALM}/protocol/openid-connect/auth
-      - PROVIDERS_GENERIC_OAUTH_TOKEN_URL=http://keycloak.localhost/auth/realms/${KC_REALM}/protocol/openid-connect/token
-      - PROVIDERS_GENERIC_OAUTH_USER_URL=http://keycloak.localhost/auth/realms/${KC_REALM}/protocol/openid-connect/userinfo
+      # [CORRECTION CRITIQUE DNS INTERNE]
+      - PROVIDERS_GENERIC_OAUTH_AUTH_URL=http://keycloak:8080/auth/realms/${KC_REALM}/protocol/openid-connect/auth
+      - PROVIDERS_GENERIC_OAUTH_TOKEN_URL=http://keycloak:8080/auth/realms/${KC_REALM}/protocol/openid-connect/token
+      - PROVIDERS_GENERIC_OAUTH_USER_URL=http://keycloak:8080/auth/realms/${KC_REALM}/protocol/openid-connect/userinfo
+      
       - PROVIDERS_GENERIC_OAUTH_SCOPE=openid profile email roles
       - PROVIDERS_GENERIC_OAUTH_ROLES=demo-client
       - URL_BASE=http://demo.localhost
@@ -82,13 +88,13 @@ services:
     networks:
       - zt-net
 
-  # 5. Demo-App (Application cible)
+  # 5. Demo-App
   demo-app:
     build:
       context: ./demo-app
     container_name: demo-app
     labels:
-      - "traefik.enable=true"
+      - "traefik.enable=true" 
     networks:
       - zt-net
 
