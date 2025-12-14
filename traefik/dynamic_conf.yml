@@ -1,52 +1,60 @@
-# traefik/dynamic_conf.yml
+# traefik/dynamic_conf.yml (Version Corrigée)
 
 http:
   routers:
-    # 1. Router pour Keycloak (Accessible publiquement)
+    # 1. Router pour Keycloak
     keycloak-router:
       rule: "Host(`keycloak.localhost`)"
-      service: "keycloak@docker"
+      # CORRECTION 1 : Le service doit être défini statiquement dans la section services
+      service: "keycloak-service@file" 
       entryPoints:
         - "web"
 
     # 2. Router pour Demo-App (Protégé par ZT)
     demo-router:
       rule: "Host(`demo.localhost`)"
-      service: "demo-app@docker"
+      # CORRECTION 2 : Le service doit être défini statiquement dans la section services
+      service: "demo-app-service@file" 
       entryPoints:
         - "web"
-      # Application des middlewares dans l'ordre :
-      # a) Authentification/Ticket (OAuth/OIDC)
-      # b) Contrôle/Jugement (ForwardAuth vers OPA)
+      # CORRECTION 3 : Les middlewares statiques doivent être référencés avec @file
       middlewares:
-        - "oauth@docker"
-        - "authz@docker"
+        - "oauth@file"
+        - "authz@file"
 
   services:
-    # Services Docker (définis dans docker-compose)
-    demo-app:
+    # Définition du service Keycloak (ciblant le conteneur par son nom de réseau Docker)
+    keycloak-service:
       loadBalancer:
         servers:
+          # On utilise le nom de conteneur Docker "keycloak" pour la résolution DNS interne
+          - url: "http://keycloak:8080" 
+          
+    # Définition du service Demo-App (ciblant le conteneur par son nom de réseau Docker)
+    demo-app-service:
+      loadBalancer:
+        servers:
+          # On utilise le nom de conteneur Docker "demo-app" pour la résolution DNS interne
           - url: "http://demo-app:80"
 
   middlewares:
     # Middleware 1 : Authentification OIDC (Keycloak)
-    # Nous utilisons Traefik ForwardAuth avec un conteneur externe (ex: thomseddon/traefik-forward-auth)
-    # Ce service gère l'échange de code/jeton OIDC avec Keycloak
     oauth:
       forwardAuth:
-        address: "http://forward-auth:4181"
+        # On utilise le nom de conteneur Docker "forward-auth" pour la résolution DNS interne
+        address: "http://forward-auth:4181" 
         authResponseHeaders:
           - "X-Forwarded-User"
-          - "X-Forwarded-User-Roles" # Pour passer les rôles à OPA
+          - "X-Forwarded-User-Roles" 
 
-    # Middleware 2 : Autorisation (OPA) - Le jugement ZT
+    # Middleware 2 : Autorisation (OPA)
     authz:
       forwardAuth:
-        address: "http://opa:8181/v1/data/authz/allow"
+        # On utilise le nom de conteneur Docker "opa" pour la résolution DNS interne
+        address: "http://opa:8181/v1/data/http/authz"
         authRequestHeaders:
           - "X-Forwarded-Method"
           - "X-Forwarded-Uri"
           - "X-Forwarded-User"
-          - "X-Forwarded-User-Roles" # Récupère les rôles du middleware 'oauth'
-          - "X-Forwarded-For" # Pour la règle de contexte IP
+          - "X-Forwarded-User-Roles" 
+          - "X-Forwarded-For"
