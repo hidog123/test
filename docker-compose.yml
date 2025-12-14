@@ -9,14 +9,14 @@ services:
       - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN}
       - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
       - KC_DB=dev-file
-      #- KC_HOSTNAME=keycloak.localhost # <-- SUPPRIMER CETTE LIGNE
-      - KC_HOSTNAME_URL=http://keycloak.localhost
+      - KC_HOSTNAME_URL=http://keycloak.localhost # Correction 1 : Conserver uniquement URL pour éviter le conflit
       - KC_HTTP_RELATIVE_PATH=/auth
       - KC_HEALTH_ENABLED=true
       - KC_METRICS_ENABLED=true
     volumes:
       - ./keycloak/realm-config.json:/opt/keycloak/data/import/realm-config.json
-    command: start --import-realm --optimized
+    # Correction 2 : Passage en mode développement pour éviter l'obligation de HTTPS
+    command: start-dev --import-realm --optimized 
     labels:
       - "traefik.enable=true"
     networks:
@@ -33,7 +33,7 @@ services:
       - "--entrypoints.web.address=:80"
     ports:
       - "80:80"
-      - "8080:8080" # Tableau de bord Traefik
+      - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
@@ -43,7 +43,7 @@ services:
 
   # 3. OPA (Le Juge/Moteur de politique)
   opa:
-    image: openpolicyagent/opa:latest # <-- CORRECTION 1 : Tag mis à jour
+    image: openpolicyagent/opa:latest
     container_name: opa
     command: run --server --addr :8181 --log-level debug /policy.rego
     volumes:
@@ -59,9 +59,16 @@ services:
     image: thomseddon/traefik-forward-auth:latest
     container_name: forward-auth
     environment:
-      # --- CORRECTION 3 : AJOUT DE LA CLÉ SECRÈTE POUR LES COOKIES ---
       - SECRET=Une-Tres-Longue-Chaine-Secrete-Pour-Chiffrer-Les-Cookies-De-Session-OIDC-A-Changer-En-Prod 
-      # -----------------------------------------------------------------
+      
+      # Correction 3 : Activer explicitement le fournisseur générique
+      - PROVIDERS_GENERIC_OAUTH_ENABLED=true 
+      # Correction 4a : Désactiver explicitement le fournisseur Google
+      - PROVIDERS_GOOGLE_ENABLED=false 
+      # Correction 4b : Fournir des valeurs dummy pour satisfaire l'initialisation Google (problème récurrent)
+      - PROVIDERS_GOOGLE_CLIENT_ID=dummy
+      - PROVIDERS_GOOGLE_CLIENT_SECRET=dummy
+      
       - PROVIDERS_GENERIC_OAUTH_CLIENT_ID=${KC_CLIENT_ID}
       - PROVIDERS_GENERIC_OAUTH_CLIENT_SECRET=${KC_CLIENT_SECRET}
       - PROVIDERS_GENERIC_OAUTH_AUTH_URL=http://keycloak.localhost/auth/realms/${KC_REALM}/protocol/openid-connect/auth
